@@ -82,7 +82,10 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
+        gray    = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        faces   = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        return [(x, y, x + w, y + h) for (x, y, w, h) in faces] if len(faces) else []
 
 
     def align_face(
@@ -92,14 +95,23 @@ class FaceService:
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        x1, y1, x2, y2 = self._clip_xyxy(*box, image.shape[0], image.shape[1])
+        crop = image[y1:y2, x1:x2]
+        crop = cv2.resize(crop, (self.face_size, self.face_size))
+        return AlignedFace(image=crop, bbox=list(box), keypoints=None)
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        img    = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
+        tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+        tensor = ((tensor - 0.5) / 0.5).unsqueeze(0)
+        with torch.no_grad():
+            emb = self.model(tensor)
+        emb = emb / emb.norm()
+        return emb.squeeze().tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
